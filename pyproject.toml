@@ -43,6 +43,11 @@ dependencies = [
 twelvelabs = [
     "twelvelabs>=1.2.8",
 ]
+# Daily Tử Vi video Telegram bot (python -m app.bot.telegram_bot); install
+# with `uv sync --extra tuvi-bot`.
+tuvi-bot = [
+    "python-telegram-bot[job-queue]>=22.0",
+]
 
 [dependency-groups]
 dev = [

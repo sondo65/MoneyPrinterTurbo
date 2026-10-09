@@ -24,6 +24,7 @@ TTS_API_KEY_LABELS = {
     "MiniMax TTS API Key": "platform.minimaxi.com",
     "ElevenLabs API Key": "elevenlabs.io/app/settings/api-keys",
     "Chatterbox API Key": "github.com/travisvn/chatterbox-tts-api",
+    "VieNeu API Key": "github.com/pnnbao97/VieNeu-TTS",
     "VoxCPM API Key": "platform.modelbest.cn/console/keys",
 }
 
@@ -35,6 +36,7 @@ TTS_PROVIDER_WIDGETS = {
     "minimax-tts": ("minimax_tts_api_key_input", "MiniMax TTS API Key"),
     "elevenlabs": ("elevenlabs_api_key_input", "ElevenLabs API Key"),
     "chatterbox": ("chatterbox_api_key_input", "Chatterbox API Key"),
+    "vieneu": ("vieneu_api_key_input", "VieNeu API Key"),
     "voxcpm": ("voxcpm_api_key_input", "VoxCPM API Key"),
 }
 
@@ -84,6 +86,7 @@ def test_tts_provider_inputs_render_the_standardized_labels():
         patch.object(voice, "get_mimo_voices", return_value=[]),
         patch.object(voice, "get_elevenlabs_voices", return_value=[]),
         patch.object(voice, "get_chatterbox_voices", return_value=[]),
+        patch.object(voice, "get_vieneu_voices", return_value=["vieneu:Mai Anh"]),
     ):
         app = AppTest.from_file(str(WEBUI_MAIN), default_timeout=30)
         app.session_state["ui_language"] = "zh"

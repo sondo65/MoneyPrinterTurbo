@@ -8,6 +8,7 @@
     "YouTube Audience Help": "Elige según el público al que va dirigido el vídeo. Esta declaración se envía al subirlo a YouTube y no modifica el contenido generado.",
     "Kokoro Base URL": "URL base de Kokoro",
     "Kokoro API Key": "Clave API de Kokoro (opcional; [Configuración](https://github.com/remsky/Kokoro-FastAPI))",
+    "VieNeu API Key": "Clave API de VieNeu (opcional; [Configuración](https://github.com/pnnbao97/VieNeu-TTS))",
     "Kokoro Model": "Modelo de Kokoro",
     "Kokoro Voices": "Voces de Kokoro",
     "Kokoro Voices Placeholder": "Déjalo vacío para cargar las voces del servidor, o escribe af_heart, bf_emma, hf_alpha",

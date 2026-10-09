@@ -103,6 +103,8 @@ DEFAULT_KOKORO_BASE_URL = "http://127.0.0.1:8880/v1"
 DEFAULT_KOKORO_MODEL = "kokoro"
 # empty = ask the server for its voice list (GET {base_url}/audio/voices)
 DEFAULT_KOKORO_VOICES: list[str] = []
+DEFAULT_VIENEU_BASE_URL = voice.VIENEU_DEFAULT_BASE_URL
+DEFAULT_VIENEU_MODEL = voice.VIENEU_DEFAULT_MODEL
 DEFAULT_VOXCPM_BASE_URL = voice.VOXCPM_DEFAULT_BASE_URL
 DEFAULT_VOXCPM_VOICE = voice.VOXCPM_DEFAULT_VOICE
 VOXCPM_REFERENCE_AUDIO_SESSION_KEY = "voxcpm_reference_audio"
@@ -238,6 +240,7 @@ _RUNTIME_CONFIG_SECTIONS = {
     "azure": config.azure,
     "chatterbox": config.chatterbox,
     "kokoro": config.kokoro,
+    "vieneu": config.vieneu,
     "elevenlabs": config.elevenlabs,
     "minimax_tts": config.minimax_tts,
     "siliconflow": config.siliconflow,
@@ -563,6 +566,74 @@ def _get_kokoro_voice_options(saved_voice_name: str) -> list[str]:
         if voice.is_kokoro_voice(saved_voice_name) and saved_voice_name not in options:
             options.insert(0, saved_voice_name)
     return options or [f"kokoro:{voice.KOKORO_DEFAULT_VOICE}"]
+
+
+def _sync_vieneu_config_from_session_state():
+    # 与 Kokoro 相同：音色目录先于设置输入框渲染，需先同步本次 rerun 的输入。
+    _set_runtime_config(
+        "vieneu",
+        "base_url",
+        (
+            st.session_state.get(
+                "vieneu_base_url_input",
+                config.vieneu.get("base_url") or DEFAULT_VIENEU_BASE_URL,
+            )
+            or ""
+        ).strip(),
+    )
+    _set_runtime_config(
+        "vieneu",
+        "api_key",
+        st.session_state.get("vieneu_api_key_input", config.vieneu.get("api_key", "")),
+    )
+    _set_runtime_config(
+        "vieneu",
+        "model_id",
+        (
+            st.session_state.get(
+                "vieneu_model_input",
+                config.vieneu.get("model_id") or DEFAULT_VIENEU_MODEL,
+            )
+            or DEFAULT_VIENEU_MODEL
+        ).strip(),
+    )
+    _set_runtime_config(
+        "vieneu",
+        "voices",
+        _parse_chatterbox_voices(
+            st.session_state.get("vieneu_voices_input", config.vieneu.get("voices") or [])
+        ),
+    )
+
+
+def _get_vieneu_voice_options(saved_voice_name: str) -> list[str]:
+    """会话内短缓存远端目录；服务离线时回退到内置预置音色并保留上次选择。"""
+    if config.vieneu.get("voices"):
+        return voice.get_vieneu_voices()
+
+    signature = (
+        (config.vieneu.get("base_url") or "").strip().rstrip("/"),
+        _credential_signature(config.vieneu.get("api_key", "")),
+    )
+    catalog = st.session_state.get("vieneu_voice_catalog", {})
+    if catalog.get("signature") != signature:
+        catalog = {"signature": signature, "voices": [], "checked_at": None}
+    now = time.monotonic()
+    if catalog["checked_at"] is None or now - catalog["checked_at"] >= 30:
+        fetched = voice.get_vieneu_voices(fallback=False)
+        catalog.update(checked_at=now, available=bool(fetched))
+        if fetched:
+            catalog["voices"] = fetched
+        st.session_state["vieneu_voice_catalog"] = catalog
+
+    options = list(catalog["voices"])
+    if not catalog["available"]:
+        st.warning(tr("VieNeu Voices Unavailable"))
+        if not options:
+            options = [f"vieneu:{name}" for name in voice.VIENEU_PRESET_VOICES]
+        if voice.is_vieneu_voice(saved_voice_name) and saved_voice_name not in options:
+            options.insert(0, saved_voice_name)
+    return options or [f"vieneu:{voice.VIENEU_DEFAULT_VOICE}"]
 
 
 def _detect_audio_mime(audio_file: str, audio_bytes: bytes) -> str:
@@ -1420,6 +1491,8 @@ def _infer_tts_server_from_voice(voice_name):
         return "chatterbox"
     if voice.is_kokoro_voice(voice_name):
         return "kokoro"
+    if voice.is_vieneu_voice(voice_name):
+        return "vieneu"
     if voice.is_fish_audio_voice(voice_name):
         return "fish_audio"
     if voice.is_voxcpm_voice(voice_name):
@@ -5877,6 +5950,12 @@ def _get_voice_preview_provider_signature(tts_server: str) -> dict:
             "model_id": config.kokoro.get("model_id", ""),
             "credential": _credential_signature(config.kokoro.get("api_key", "")),
         }
+    if tts_server == "vieneu":
+        return {
+            "base_url": config.vieneu.get("base_url", ""),
+            "model_id": config.vieneu.get("model_id", ""),
+            "credential": _credential_signature(config.vieneu.get("api_key", "")),
+        }
     if tts_server == "voxcpm":
         return {
             "base_url": config.voxcpm.get("base_url", ""),
@@ -5911,6 +5990,8 @@ def _synthesize_voice_preview(
         _sync_chatterbox_config_from_session_state()
     if selected_tts_server == "kokoro":
         _sync_kokoro_config_from_session_state()
+    if selected_tts_server == "vieneu":
+        _sync_vieneu_config_from_session_state()
 
     temp_dir = utils.storage_dir("temp", create=True)
     audio_file = os.path.join(temp_dir, f"tmp-voice-{str(uuid4())}.mp3")
@@ -6782,6 +6863,7 @@ def _render_audio_settings(panel, params):
                 ("elevenlabs", "ElevenLabs TTS"),
                 ("chatterbox", "Chatterbox TTS"),
                 ("kokoro", "Kokoro TTS"),
+                ("vieneu", "VieNeu TTS"),
                 ("fish_audio", "Fish Audio TTS"),
                 ("voxcpm", "VoxCPM TTS"),
             ]
@@ -6857,6 +6939,9 @@ def _render_audio_settings(panel, params):
                 # 自托管 Kokoro 服务的音色：[kokoro] voices 为空时从服务端 /audio/voices 读取
                 _sync_kokoro_config_from_session_state()
                 filtered_voices = _get_kokoro_voice_options(saved_voice_name)
+            elif selected_tts_server == "vieneu":
+                _sync_vieneu_config_from_session_state()
+                filtered_voices = _get_vieneu_voice_options(saved_voice_name)
             elif selected_tts_server == "fish_audio":
                 filtered_voices = voice.get_fish_audio_voices()
             elif selected_tts_server == "voxcpm":
@@ -6885,6 +6970,8 @@ def _render_audio_settings(panel, params):
                 if voice.is_chatterbox_voice(v) or voice.is_kokoro_voice(v):
                     name = v.split(":", 1)[1] if ":" in v else v
                     return name.replace("-Female", "").replace("-Male", "")
+                if voice.is_vieneu_voice(v):
+                    return v.split(":", 1)[1]
                 if voice.is_minimax_voice(v):
                     return minimax_voice_labels.get(v, v.split(":", 1)[1])
                 if voice.is_fish_audio_voice(v):
@@ -7343,6 +7430,47 @@ def _render_audio_settings(panel, params):
                     "kokoro",
                     "voices",
                     _parse_chatterbox_voices(kokoro_voices),
+                )
+
+            # VieNeu-TTS settings (self-hosted Vietnamese TTS; voices listed from the server when left empty)
+            if tts_mode_enabled and (
+                selected_tts_server == "vieneu"
+                or (voice_name and voice.is_vieneu_voice(voice_name))
+            ):
+                vieneu_base_url = st.text_input(
+                    tr("VieNeu Base URL"),
+                    value=config.vieneu.get("base_url") or DEFAULT_VIENEU_BASE_URL,
+                    key="vieneu_base_url_input",
+                    placeholder=DEFAULT_VIENEU_BASE_URL,
+                )
+                _set_runtime_config("vieneu", "base_url", (vieneu_base_url or "").strip())
+
+                vieneu_api_key = st.text_input(
+                    tr("VieNeu API Key"),
+                    value=config.vieneu.get("api_key", ""),
+                    type="password",
+                    key="vieneu_api_key_input",
+                )
+                _set_runtime_config("vieneu", "api_key", vieneu_api_key)
+
+                vieneu_model = st.text_input(
+                    tr("VieNeu Model"),
+                    value=config.vieneu.get("model_id") or DEFAULT_VIENEU_MODEL,
+                    key="vieneu_model_input",
+                )
+                _set_runtime_config(
+                    "vieneu", "model_id", (vieneu_model or DEFAULT_VIENEU_MODEL).strip()
+                )
+
+                _saved_vieneu_voices = _parse_chatterbox_voices(config.vieneu.get("voices"))
+                vieneu_voices = st.text_input(
+                    tr("VieNeu Voices"),
+                    value=", ".join(_saved_vieneu_voices),
+                    key="vieneu_voices_input",
+                    placeholder=tr("VieNeu Voices Placeholder"),
+                )
+                _set_runtime_config(
+                    "vieneu", "voices", _parse_chatterbox_voices(vieneu_voices)
                 )
 
             # 三种模式只渲染当前任务真正需要的控件。自动配音可调音量和语速；

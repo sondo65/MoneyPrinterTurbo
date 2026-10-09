@@ -8,6 +8,7 @@
     "YouTube Audience Help": "Pilih sesuai target audiens video. Pernyataan ini dikirim saat mengunggah ke YouTube dan tidak mengubah konten yang dihasilkan.",
     "Kokoro Base URL": "URL Dasar Kokoro",
     "Kokoro API Key": "Kunci API Kokoro (opsional; [Panduan Konfigurasi](https://github.com/remsky/Kokoro-FastAPI))",
+    "VieNeu API Key": "Kunci API VieNeu (opsional; [Panduan Konfigurasi](https://github.com/pnnbao97/VieNeu-TTS))",
     "Kokoro Model": "Model Kokoro",
     "Kokoro Voices": "Suara Kokoro",
     "Kokoro Voices Placeholder": "Kosongkan untuk memuat suara server, atau isi af_heart, bf_emma, hf_alpha",

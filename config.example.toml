@@ -583,6 +583,52 @@ model_id = "kokoro"
 # from the server (GET {base_url}/audio/voices).
 voices = []
 
+[vieneu]
+# Self-hosted VieNeu-TTS server (Vietnamese, pnnbao97/VieNeu-TTS v3 Turbo).
+# Start it from the VieNeu-TTS repo with: uv run python -m apps.openai_speech
+base_url = "http://127.0.0.1:8000/v1"
+# Only needed when the server sets VIENEU_API_KEY.
+api_key = ""
+model_id = "vieneu-v3-turbo"
+# Voice names ("Minh Quân Pro", "Mai Anh", ...). Leave empty to read the list
+# from the server (GET {base_url}/voices), including voices cloned there.
+voices = []
+
+[tuvi]
+# Daily Tử Vi short-video pipeline + Telegram bot (python -m app.bot.telegram_bot).
+# Script and scene text are written by the LLM in [app].llm_provider; set
+# llm_provider = "deepseek" and deepseek_api_key to use DeepSeek.
+# RSS feeds or article pages used as topic sources. Facebook pages cannot be read
+# without login: paste the post text to the bot with /taovideo instead.
+sources = [
+  "https://lichngaytot.com/RSS/304.rss",
+  "https://lichngaytot.com/RSS/277.rss",
+  "https://lichngaytot.com/RSS/579.rss",
+  "https://lichvansu.wap.vn/rss",
+]
+# Local time (Asia/Ho_Chi_Minh) for the automatic daily video.
+daily_time = "06:30"
+timezone = "Asia/Ho_Chi_Minh"
+# Token from @BotFather; only chats listed below may use the bot and receive
+# the daily video.
+telegram_bot_token = ""
+telegram_allowed_chat_ids = []
+# Voice used for narration; empty falls back to [ui].voice_name.
+voice_name = "vieneu:Giọng kể chuyện"
+app_name = "Tử Vi AI"
+cta_text = "Tải app Tử Vi AI để xem lá số của riêng bạn"
+# Folder containing app_icon.png and zodiac/*.png (TuViAI app/assets/images).
+brand_assets_dir = ""
+scene_count = 8
+bgm_volume = 0.15
+# Illustrations: the LLM writes one image prompt per scene, Gemini draws it in the
+# traditional Vietnamese "giấy dó" style. Key: https://aistudio.google.com/app/apikey
+# (falls back to [app].gemini_api_key). Without a key, scenes use ornament frames.
+image_provider = "gemini"
+gemini_api_key = ""
+image_model = "gemini-2.5-flash-image"
+# image_style = ""   # optional override of the built-in style prompt
+
 [fish_audio]
 # Fish Audio TTS service: https://fish.audio
 # API key: https://fish.audio/app/developers

@@ -274,6 +274,7 @@
     "Chatterbox Voices Placeholder": "default-Female, narrator-Male",
     "Kokoro Base URL": "Kokoro əsas URL-i",
     "Kokoro API Key": "Kokoro API açarı (istəyə bağlı; [Quraşdırmaya bax](https://github.com/remsky/Kokoro-FastAPI))",
+    "VieNeu API Key": "VieNeu API açarı (istəyə bağlı; [Quraşdırmaya bax](https://github.com/pnnbao97/VieNeu-TTS))",
     "Kokoro Model": "Kokoro modeli",
     "Kokoro Voices": "Kokoro səsləri",
     "Kokoro Base URL Placeholder": "http://localhost:8880/v1",

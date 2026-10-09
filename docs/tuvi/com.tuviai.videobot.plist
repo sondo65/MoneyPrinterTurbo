@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Keeps the Tử Vi video bot running on macOS (starts at login, restarts on crash).
+  Install:
+    cp docs/tuvi/com.tuviai.videobot.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.tuviai.videobot.plist
+  Stop:
+    launchctl unload ~/Library/LaunchAgents/com.tuviai.videobot.plist
+  Edit the paths below if the project lives elsewhere.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.tuviai.videobot</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>/Users/dotruongson/Documents/freelancer/MoneyPrinterTurbo-main/start-bot.sh</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/dotruongson/Documents/freelancer/MoneyPrinterTurbo-main</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/Users/dotruongson/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <key>StandardOutPath</key>
+  <string>/tmp/tuvi-videobot.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/tuvi-videobot.log</string>
+</dict>
+</plist>

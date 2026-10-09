@@ -483,7 +483,7 @@ Batch manifests:
             "instead, unless this option is given. "
             "Use 'no-voice' for silent output. Provider-specific identifiers "
             "use prefixes such as gemini:, mimo:, elevenlabs:, chatterbox:, "
-            "kokoro:, and voxcpm:"
+            "kokoro:, vieneu:, and voxcpm:"
         ),
     )
     audio_group.add_argument(

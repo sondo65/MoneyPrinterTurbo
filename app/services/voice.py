@@ -236,7 +236,7 @@ def get_chatterbox_voices() -> list[str]:
 KOKORO_DEFAULT_VOICE = "af_heart"
 
 
-def _normalize_kokoro_voices(entries) -> list[str]:
+def _normalize_prefixed_voices(entries, prefix: str) -> list[str]:
     """统一手工配置与服务端新旧格式，只接收真实 ID，避免把对象转成音色名。"""
     if isinstance(entries, str):
         entries = entries.split(",")
@@ -247,12 +247,16 @@ def _normalize_kokoro_voices(entries) -> list[str]:
         name = entry.get("id") if isinstance(entry, dict) else entry
         if not isinstance(name, str):
             continue
-        name = name.strip().removeprefix("kokoro:").strip()
+        name = name.strip().removeprefix(f"{prefix}:").strip()
         if name:
-            value = f"kokoro:{name}"
+            value = f"{prefix}:{name}"
             if value not in result:
                 result.append(value)
     return result
+
+
+def _normalize_kokoro_voices(entries) -> list[str]:
+    return _normalize_prefixed_voices(entries, "kokoro")
 
 
 def get_kokoro_voices(*, fallback: bool = True) -> list[str]:
@@ -287,6 +291,61 @@ def get_kokoro_voices(*, fallback: bool = True) -> list[str]:
                 # 不输出 URL/异常正文，避免自托管地址的查询参数或认证信息进入日志。
                 logger.warning(f"kokoro voice list unavailable ({type(e).__name__})")
     return voices or ([f"kokoro:{KOKORO_DEFAULT_VOICE}"] if fallback else [])
+
+
+VIENEU_DEFAULT_BASE_URL = "http://127.0.0.1:8000/v1"
+VIENEU_DEFAULT_MODEL = "vieneu-v3-turbo"
+VIENEU_DEFAULT_VOICE = "Minh Quân Pro"
+VIENEU_SAMPLE_RATE = 48000
+# Built-in VieNeu-TTS v3 Turbo presets, used when the server cannot be reached
+# so the selector stays usable; the live list (GET {base_url}/voices) also
+# includes voices cloned on the server via POST /v1/voices.
+VIENEU_PRESET_VOICES = (
+    "Minh Quân Pro", "Adam bựa", "Trúc Ly", "Anh Khôi", "Mai Anh", "Thùy Dung",
+    "Thiền Tâm Đức", "Ngọc Huyền", "Quang Sơn", "Ngọc Trân", "Minh Đức",
+    "Phạm Tuyên", "Thái Sơn", "Xuân Vĩnh", "Thanh Bình", "Ngọc Linh",
+    "Đoan Trang", "Thục Đoan", "Minh Triết", "Mỹ Duyên", "Quỳnh Anh",
+    "Đức Trí", "Kim Thanh", "Adam", "Mạnh Dũng",
+)
+
+
+def _get_vieneu_base_url() -> str:
+    configured = (config.vieneu.get("base_url", "") or "").strip()
+    return (configured or VIENEU_DEFAULT_BASE_URL).rstrip("/")
+
+
+def get_vieneu_voices(*, fallback: bool = True) -> list[str]:
+    """Return VieNeu-TTS voices as ``vieneu:<name>``.
+
+    ``[vieneu] voices`` pins the list; otherwise the server is queried. With
+    ``fallback=False`` an unreachable server yields ``[]`` so the WebUI can tell
+    an outage apart from an empty catalog.
+    """
+    voices = _normalize_prefixed_voices(config.vieneu.get("voices"), "vieneu")
+    if not voices:
+        try:
+            headers = {}
+            api_key = config.vieneu.get("api_key", "")
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
+            response = requests.get(
+                f"{_get_vieneu_base_url()}/voices", headers=headers, timeout=5
+            )
+            if response.status_code == 200:
+                data = response.json()
+                listed = data.get("data", []) if isinstance(data, dict) else data
+                voices = _normalize_prefixed_voices(listed, "vieneu")
+                if not voices:
+                    logger.warning("vieneu voice list contains no valid voice IDs")
+            else:
+                logger.warning(
+                    f"vieneu voices request failed with status {response.status_code}"
+                )
+        except Exception as e:
+            logger.warning(f"vieneu voice list unavailable ({type(e).__name__})")
+    if voices or not fallback:
+        return voices
+    return [f"vieneu:{name}" for name in VIENEU_PRESET_VOICES]
 
 
 def get_fish_audio_voices() -> list[str]:
@@ -433,6 +492,10 @@ def is_kokoro_voice(voice_name: str) -> bool:
     return (voice_name or "").startswith("kokoro:")
 
 
+def is_vieneu_voice(voice_name: str | None) -> bool:
+    return (voice_name or "").startswith("vieneu:")
+
+
 def is_fish_audio_voice(voice_name: str) -> bool:
     return (voice_name or "").startswith("fish_audio:")
 
@@ -484,6 +547,8 @@ def is_azure_v1_voice(voice_name: str | None) -> bool:
     if is_chatterbox_voice(name):
         return False
     if is_kokoro_voice(name):
+        return False
+    if is_vieneu_voice(name):
         return False
     if is_fish_audio_voice(name):
         return False
@@ -702,6 +767,12 @@ def _single_tts(
         else:
             logger.error(f"Invalid kokoro voice name format: {voice_name}")
             return None
+    elif is_vieneu_voice(voice_name):
+        vieneu_voice = voice_name.split(":", 1)[1].strip()
+        if vieneu_voice:
+            return vieneu_tts(text, vieneu_voice, voice_file, voice_rate, voice_volume)
+        logger.error(f"Invalid vieneu voice name format: {voice_name}")
+        return None
     elif is_fish_audio_voice(voice_name):
         parts = voice_name.split(":")
         reference_id = parts[1] if len(parts) >= 2 else "default"
@@ -2317,6 +2388,122 @@ def kokoro_tts(
     return _openai_compatible_tts(
         "kokoro", base_url, api_key, model_id, voice, text, voice_rate, voice_file
     )
+
+
+_VIENEU_NON_RETRYABLE_STATUS_CODES = {400, 401, 403, 404, 413, 422}
+
+
+def vieneu_tts(
+    text: str,
+    voice: str,
+    voice_file: str,
+    voice_rate: float = 1.0,
+    voice_volume: float = 1.0,
+) -> Union[SubMaker, None]:
+    """Generate Vietnamese speech with a self-hosted VieNeu-TTS server.
+
+    VieNeu-TTS (pnnbao97/VieNeu-TTS, v3 Turbo) serves an OpenAI-shaped
+    ``POST {base_url}/audio/speech`` via ``python -m apps.openai_speech``
+    (default ``http://127.0.0.1:8000/v1``). The server only emits ``pcm``/``wav``
+    and ignores ``speed``, so raw 48 kHz s16le PCM is requested and the rate
+    is applied locally with ffmpeg ``atempo`` while encoding to MP3.
+
+    No word-level timestamps are returned; set ``subtitle_provider = "whisper"``
+    for tighter subtitle sync.
+    """
+    from pydub import AudioSegment
+
+    _configure_pydub_ffmpeg(AudioSegment)
+
+    text = (text or "").strip()
+    if not text:
+        logger.error("VieNeu TTS text is empty")
+        return None
+    if not any(character.isalnum() for character in text):
+        logger.error("VieNeu TTS text contains no speakable characters")
+        return None
+    base_url = _get_vieneu_base_url()
+    headers = {"Content-Type": "application/json"}
+    api_key = config.vieneu.get("api_key", "")
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    payload = {
+        "model": config.vieneu.get("model_id", "") or VIENEU_DEFAULT_MODEL,
+        "input": text,
+        "voice": voice,
+        "response_format": "pcm",
+        "sample_rate": VIENEU_SAMPLE_RATE,
+    }
+    # atempo 在旧版 FFmpeg 中只接受 0.5-2.0，WebUI 的语速选项都在此范围内。
+    rate = max(0.5, min(2.0, float(voice_rate or 1.0)))
+    export_parameters = ["-filter:a", f"atempo={rate:g}"] if abs(rate - 1.0) > 1e-3 else None
+
+    for i in range(3):
+        temporary_audio = None
+        try:
+            logger.info(f"start vieneu tts, voice: {voice}, try: {i + 1}")
+            ensure_file_path_exists(voice_file)
+
+            # CPU 上 RTF 约 0.5，长脚本需要较长的同步等待。
+            response = requests.post(
+                f"{base_url}/audio/speech", json=payload, headers=headers, timeout=600
+            )
+            if response.status_code == 429:
+                logger.warning("vieneu server is busy, retrying")
+                time.sleep(2)
+                continue
+            if response.status_code in _VIENEU_NON_RETRYABLE_STATUS_CODES:
+                logger.error(
+                    f"vieneu tts failed with status {response.status_code}: {response.text[:200]}"
+                )
+                return None
+            if response.status_code != 200:
+                logger.error(
+                    f"vieneu tts failed with status {response.status_code}: {response.text[:200]}"
+                )
+                continue
+
+            pcm = response.content or b""
+            pcm = pcm[: len(pcm) - len(pcm) % 2]
+            if not pcm:
+                raise ValueError("vieneu returned empty audio")
+            segment = AudioSegment(
+                data=pcm, sample_width=2, frame_rate=VIENEU_SAMPLE_RATE, channels=1
+            )
+
+            with tempfile.NamedTemporaryFile(
+                dir=os.path.dirname(os.path.abspath(voice_file)),
+                suffix=".mp3", delete=False,
+            ) as f:
+                temporary_audio = f.name
+            segment.export(temporary_audio, format="mp3", parameters=export_parameters).close()
+
+            audio_clip = AudioFileClip(temporary_audio)
+            try:
+                audio_duration = audio_clip.duration
+            finally:
+                audio_clip.close()
+            if not math.isfinite(audio_duration) or audio_duration <= 0:
+                raise ValueError("vieneu returned an invalid audio duration")
+
+            sub_maker = ensure_legacy_submaker_fields(SubMaker())
+            os.replace(temporary_audio, voice_file)
+            logger.success(f"vieneu tts succeeded: {voice_file}")
+            return populate_legacy_submaker_with_full_text(
+                sub_maker=sub_maker,
+                text=text,
+                audio_duration_seconds=audio_duration,
+            )
+        except Exception as e:
+            logger.error(f"vieneu tts failed: {str(e)}")
+        finally:
+            if temporary_audio and os.path.exists(temporary_audio):
+                try:
+                    os.unlink(temporary_audio)
+                except OSError as exc:
+                    logger.warning(f"could not remove temporary vieneu audio: {exc}")
+
+    return None
 
 
 # Fish Audio supported models.
