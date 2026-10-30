@@ -64,3 +64,20 @@ def test_missing_illustration_is_an_error(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "tuvi", {"brand_assets_dir": ""})
     with pytest.raises(cards.MissingIllustrationError):
         cards.render_cards(_content(), str(tmp_path), {0: _art(tmp_path)})
+
+
+def test_brand_is_a_transparent_overlay_not_part_of_the_scene_cards(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "tuvi", {"app_name": "Tử Vi AI", "brand_assets_dir": ""})
+    art = _art(tmp_path, (200, 30, 30))
+    card = cards.render_illustration_card(art, str(tmp_path / "card.png"), app_name="Tử Vi AI")
+    brand = cards.render_brand_overlay(str(tmp_path / "brand.png"), "Tử Vi AI")
+
+    with Image.open(card) as image:
+        # The flat red artwork is only blended towards paper by the same amount everywhere,
+        # so a baked-in mark would show up as extra colours in the top band.
+        top_band = image.crop((0, 100, cards.WIDTH, 200)).convert("RGB").getcolors(maxcolors=1_000_000)
+    assert len(top_band) < 50
+    with Image.open(brand) as layer:
+        assert layer.mode == "RGBA" and layer.size == (cards.WIDTH, cards.HEIGHT)
+        assert layer.getpixel((5, cards.HEIGHT // 2))[3] == 0
+        assert layer.crop((0, 100, cards.WIDTH, 200)).getchannel("A").getextrema()[1] > 0

@@ -43,3 +43,31 @@ def test_join_sentences_evens_out_levels(tmp_path):
     first = track[int(result.sentences[0].start * 1000) + 100: int(result.sentences[0].end * 1000) - 100]
     second = track[int(result.sentences[1].start * 1000) + 100: int(result.sentences[1].end * 1000) - 100]
     assert abs(first.dBFS - second.dBFS) < 1.0
+
+
+def test_camera_move_varies_between_scenes_and_pushes_in_on_last(monkeypatch):
+    monkeypatch.setitem(render.config.tuvi, "scene_motion", True)
+    moves = [render.camera_move(i, 8) for i in range(8)]
+    assert all(a != b for a, b in zip(moves, moves[1:]))
+    assert moves[-1] == "zoom_in"
+
+    monkeypatch.setitem(render.config.tuvi, "scene_motion", False)
+    assert {render.camera_move(i, 8) for i in range(8)} == {"zoom_in"}
+
+
+def test_camera_expressions_cover_every_move():
+    for move in render.CAMERA_MOVES:
+        z, x, y = render.camera_expressions(move, 90)
+        assert z and x and y
+        assert "on/90" in z + x + y
+
+
+def test_scene_clip_renders_for_each_move(tmp_path):
+    from PIL import Image
+
+    image = tmp_path / "card.png"
+    Image.new("RGB", (1080, 1920), (200, 170, 140)).save(image)
+    for move in sorted(set(render.CAMERA_MOVES)):
+        clip = render.render_scene_clip(str(image), 0.5, str(tmp_path / f"{move}.mp4"), move=move)
+        assert (tmp_path / f"{move}.mp4").stat().st_size > 0
+        assert clip.endswith(f"{move}.mp4")

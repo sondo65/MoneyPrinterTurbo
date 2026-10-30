@@ -148,6 +148,9 @@ def produce_video(video_content: content.VideoContent, work_dir: str, voice_name
     progress(f"Đang vẽ tranh minh họa cho {len(video_content.scenes)} cảnh...")
     illustrations = generate_illustrations(video_content, work_dir)
     card_paths = cards.render_cards(video_content, os.path.join(work_dir, "cards"), illustrations)
+    brand_path = cards.render_brand_overlay(
+        os.path.join(work_dir, "cards", "brand.png"), config.tuvi.get("app_name", "Tử Vi AI")
+    )
 
     progress("Đang đọc lời bằng VieNeu...")
     audios = synthesize_scenes(video_content, work_dir, voice_name)
@@ -157,7 +160,8 @@ def produce_video(video_content: content.VideoContent, work_dir: str, voice_name
 
     output_path = os.path.join(work_dir, "final.mp4")
     return render.render_video(
-        work_dir, card_paths, durations, narration_path, ass_text, output_path, progress=progress
+        work_dir, card_paths, durations, narration_path, ass_text, output_path,
+        progress=progress, brand_path=brand_path,
     )
 
 

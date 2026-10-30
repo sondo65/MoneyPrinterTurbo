@@ -628,6 +628,11 @@ cta_text = "Tải app Tử Vi AI để xem lá số của riêng bạn"
 brand_assets_dir = ""
 scene_count = 8
 bgm_volume = 0.15
+# Motion for the still illustrations (both free, FFmpeg only):
+#   scene_motion       varied camera move per scene (zoom in/out, pan left/right, rise); false = slow zoom only
+#   ambient_particles  drifting golden dust over the whole video (rendered once, cached in storage/cache/tuvi_ambient)
+scene_motion = true
+ambient_particles = true
 # Illustrations: the LLM writes one image prompt per scene and an image provider draws it in
 # the traditional Vietnamese "giấy dó" style. image_provider is a chain tried left to right:
 #   "local"        FLUX.1-schnell on this Mac via mflux (free; uv tool install mflux)

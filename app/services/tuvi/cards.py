@@ -86,9 +86,13 @@ def _cover(image: Image.Image) -> Image.Image:
     return resized.crop((left, top, left + WIDTH, top + HEIGHT))
 
 
-def draw_brand(canvas: Image.Image, app_name: str) -> None:
-    """Small centred mark at the top: round app icon + spaced uppercase name."""
-    draw = ImageDraw.Draw(canvas)
+def render_brand_overlay(output_path: str, app_name: str) -> str:
+    """Transparent full-frame layer with the small centred mark (round app icon + spaced name).
+
+    It is laid over the finished video, not baked into the scene cards, so the camera moves
+    never carry the app name with them and it stays put in the viewer's eye line.
+    """
+    layer = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     font = serif(30)
     label = " ".join(app_name.upper())
     icon = _load_asset("app_icon.png")
@@ -97,12 +101,24 @@ def draw_brand(canvas: Image.Image, app_name: str) -> None:
     total = icon_size + gap + font.getlength(label)
     x = (WIDTH - total) / 2
     y = 120
+
+    # Soft paper-coloured glow so the mark stays readable over any part of the illustration.
+    glow = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
+    ImageDraw.Draw(glow).rounded_rectangle(
+        [x - 28, y - 14, x + total + 28, y + 60], radius=40, fill=PAPER + (150,)
+    )
+    layer.alpha_composite(glow.filter(ImageFilter.GaussianBlur(18)))
+
+    draw = ImageDraw.Draw(layer)
     if icon:
         icon = icon.resize((icon_size, icon_size), Image.LANCZOS)
         mask = Image.new("L", icon.size, 0)
         ImageDraw.Draw(mask).ellipse([0, 0, icon_size - 1, icon_size - 1], fill=255)
-        canvas.paste(icon, (int(x), y), mask)
+        layer.paste(icon, (int(x), y), mask)
     draw.text((x + icon_size + gap, y + icon_size / 2), label, font=font, fill=BRAND_GOLD, anchor="lm")
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    layer.save(output_path, "PNG")
+    return output_path
 
 
 def _illustration_canvas(illustration_path: str, seed: int) -> Image.Image:
@@ -112,9 +128,7 @@ def _illustration_canvas(illustration_path: str, seed: int) -> Image.Image:
 
 
 def render_illustration_card(illustration_path: str, output_path: str, *, app_name: str, seed: int = 0) -> str:
-    canvas = _illustration_canvas(illustration_path, seed)
-    draw_brand(canvas, app_name)
-    return _save(canvas, output_path)
+    return _save(_illustration_canvas(illustration_path, seed), output_path)
 
 
 def _paper_fade(canvas: Image.Image, top: int, seed: int) -> None:
@@ -159,7 +173,6 @@ def render_cta_card(illustration_path: str, output_path: str, *, app_name: str, 
     left = (WIDTH - width) / 2
     draw.rounded_rectangle([left, y, left + width, y + 88], radius=44, fill=INK_BROWN)
     draw.text((WIDTH / 2, y + 44), label, font=button_font, fill=(245, 225, 180), anchor="mm")
-    draw_brand(canvas, app_name)
     return _save(canvas, output_path)
 
 
@@ -179,7 +192,10 @@ def render_cards(
     illustrations: dict[int, str],
     app_name: str | None = None,
 ) -> list[str]:
-    """One 1080x1920 frame per scene, every one an illustration; the last also carries the app badge."""
+    """One 1080x1920 frame per scene, every one an illustration; the last also carries the app badge.
+
+    The small top-of-frame brand mark is not part of these frames: see ``render_brand_overlay``.
+    """
     app_name = app_name or config.tuvi.get("app_name", "Tử Vi AI")
     paths = []
     last_index = len(content.scenes) - 1

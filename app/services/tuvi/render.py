@@ -13,12 +13,15 @@ from pydub import AudioSegment
 from pydub.silence import detect_nonsilent
 
 from app.config import config
+from app.services.tuvi import ambient
 from app.utils import utils
 
 FPS = 30
 SCENE_GAP = 0.35
 TAIL_SECONDS = 1.2
-ZOOM_PER_SCENE = 0.05
+ZOOM_PER_SCENE = 0.08
+# Camera move per scene, cycled so neighbouring scenes never move the same way.
+CAMERA_MOVES = ("zoom_in", "pan_right", "zoom_out", "rise", "pan_left")
 PAPER_HEX = "0xDDC3A3"
 CAPTION_FONTS = ("NotoSerif-Bold.ttf",)
 
@@ -161,12 +164,35 @@ def build_narration(audios: list[SceneAudio], durations: list[float], output_pat
     return output_path
 
 
-def render_scene_clip(image_path: str, duration: float, output_path: str) -> str:
+def camera_move(index: int, total: int) -> str:
+    """Move for scene ``index``; the last scene (app badge, centred) only pushes in."""
+    if not config.tuvi.get("scene_motion", True):
+        return "zoom_in"
+    if index == total - 1:
+        return "zoom_in"
+    return CAMERA_MOVES[index % len(CAMERA_MOVES)]
+
+
+def camera_expressions(move: str, frames: int) -> tuple[str, str, str]:
+    """zoompan ``z``, ``x``, ``y`` for a move, eased with smoothstep so it starts and ends softly."""
+    ease = f"(3*pow(on/{frames},2)-2*pow(on/{frames},3))"
+    centre_x, centre_y = "iw/2-(iw/zoom/2)", "ih/2-(ih/zoom/2)"
+    held = f"1+{ZOOM_PER_SCENE}"
+    span_x, span_y = "(iw-iw/zoom)", "(ih-ih/zoom)"
+    moves = {
+        "zoom_in": (f"1+{ZOOM_PER_SCENE}*{ease}", centre_x, centre_y),
+        "zoom_out": (f"1+{ZOOM_PER_SCENE}*(1-{ease})", centre_x, centre_y),
+        "pan_right": (held, f"{span_x}*{ease}", centre_y),
+        "pan_left": (held, f"{span_x}*(1-{ease})", centre_y),
+        "rise": (held, centre_x, f"{span_y}*(1-{ease})"),
+    }
+    return moves[move]
+
+
+def render_scene_clip(image_path: str, duration: float, output_path: str, move: str = "zoom_in") -> str:
     frames = max(1, round(duration * FPS))
-    zoom = (
-        f"zoompan=z='1+{ZOOM_PER_SCENE}*on/{frames}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
-        f":d=1:s=1080x1920:fps={FPS}"
-    )
+    z, x, y = camera_expressions(move, frames)
+    zoom = f"zoompan=z='{z}':x='{x}':y='{y}':d=1:s=1080x1920:fps={FPS}"
     fade_out_start = max(0.0, frames / FPS - 0.25)
     video_filter = (
         f"scale=2160:3840,{zoom},"
@@ -197,14 +223,19 @@ def render_video(
     ass_text: str,
     output_path: str,
     progress=None,
+    brand_path: str | None = None,
 ) -> str:
+    """``brand_path`` is a transparent full-frame PNG laid over the whole video, outside the camera moves."""
     progress = progress or (lambda message: None)
     clips_dir = os.path.join(work_dir, "clips")
     os.makedirs(clips_dir, exist_ok=True)
     clip_paths = []
     for index, (card, duration) in enumerate(zip(card_paths, durations), start=1):
         progress(f"Đang dựng cảnh {index}/{len(card_paths)}...")
-        clip_paths.append(render_scene_clip(card, duration, os.path.join(clips_dir, f"clip-{index:02d}.mp4")))
+        clip_paths.append(render_scene_clip(
+            card, duration, os.path.join(clips_dir, f"clip-{index:02d}.mp4"),
+            move=camera_move(index - 1, len(card_paths)),
+        ))
 
     with open(os.path.join(work_dir, "clips.txt"), "w", encoding="utf-8") as fp:
         fp.writelines(f"file 'clips/{os.path.basename(path)}'\n" for path in clip_paths)
@@ -229,11 +260,31 @@ def render_video(
     else:
         audio_filter = "[1:a]anull[aout]"
 
+    # Layers over the camera-moving scenes, bottom to top: brand mark, dust, then captions.
+    steps, current = [], "[0:v]"
+    if brand_path:
+        brand_index = inputs.count("-i")
+        inputs += ["-loop", "1", "-framerate", str(FPS), "-i", os.path.abspath(brand_path)]
+        steps.append(f"{current}[{brand_index}:v]overlay=format=auto:shortest=1[branded]")
+        current = "[branded]"
+    if config.tuvi.get("ambient_particles", True):
+        progress("Đang chuẩn bị lớp bụi vàng lấp lánh...")
+        dust_index = inputs.count("-i")
+        inputs += ["-stream_loop", "-1", "-i", ambient.ensure_particle_loop(ffmpeg_exe())]
+        steps += [
+            f"color=c={ambient.DUST_COLOR_HEX}:s={ambient.WIDTH}x{ambient.HEIGHT}:r={FPS}[gold]",
+            f"[{dust_index}:v]format=gray[mask]",
+            "[gold][mask]alphamerge[dust]",
+            f"{current}[dust]overlay=format=auto:shortest=1[lit]",
+        ]
+        current = "[lit]"
+    steps.append(f"{current}subtitles=captions.ass:fontsdir=fonts[vout]")
+    video_filter = ";".join(steps)
     progress("Đang ghép chữ, giọng đọc và nhạc nền...")
     _run(
         [
             *inputs,
-            "-filter_complex", f"[0:v]subtitles=captions.ass:fontsdir=fonts[vout];{audio_filter}",
+            "-filter_complex", f"{video_filter};{audio_filter}",
             "-map", "[vout]", "-map", "[aout]",
             "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
