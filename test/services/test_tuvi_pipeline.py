@@ -64,6 +64,7 @@ def test_generate_illustrations_covers_every_scene(tmp_path, monkeypatch):
 
 
 def test_generate_illustrations_requires_key(tmp_path, monkeypatch):
+    monkeypatch.setattr(pipeline.config, "tuvi", {"image_provider": "gemini"})
     monkeypatch.setattr(pipeline.images, "is_enabled", lambda: False)
     with pytest.raises(pipeline.PipelineError, match="Gemini"):
         pipeline.generate_illustrations(_content(), str(tmp_path))

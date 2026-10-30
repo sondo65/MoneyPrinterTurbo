@@ -72,7 +72,7 @@ def check_prerequisites(voice_name: str) -> None:
         if voice_name not in available:
             logger.warning(f"voice {voice_name} is not listed by VieNeu server: {available}")
     if not images.is_enabled():
-        raise PipelineError("Thiếu Gemini API key để vẽ tranh. Điền [tuvi].gemini_api_key trong config.toml.")
+        raise PipelineError(images.missing_provider_hint())
 
 
 def split_sentences(text: str) -> list[str]:
@@ -109,7 +109,7 @@ def synthesize_scenes(video_content: content.VideoContent, work_dir: str, voice_
 def generate_illustrations(video_content: content.VideoContent, work_dir: str) -> dict[int, str]:
     """Draw every illustration scene, or raise so no TTS/render time is spent on a half-drawn video."""
     if not images.is_enabled():
-        raise PipelineError("Thiếu Gemini API key để vẽ tranh.")
+        raise PipelineError(images.missing_provider_hint())
     jobs = {}
     for index, scene in enumerate(video_content.scenes):
         subject = scene.image_prompt or content.DEFAULT_IMAGE_PROMPT

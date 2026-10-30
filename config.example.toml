@@ -593,6 +593,13 @@ model_id = "vieneu-v3-turbo"
 # Voice names ("Minh Quân Pro", "Mai Anh", ...). Leave empty to read the list
 # from the server (GET {base_url}/voices), including voices cloned there.
 voices = []
+# Optional sampling overrides. The server defaults (temperature 0.8, top_k 25, top_p 0.95,
+# repetition_penalty 1.2) make intonation drift between sentences; 0.3 is steadier
+# (measured ~45% less pitch spread across sentences). Too low can sound flat.
+# temperature = 0.3
+# top_k = 25
+# top_p = 0.95
+# repetition_penalty = 1.2
 
 [tuvi]
 # Daily Tử Vi short-video pipeline + Telegram bot (python -m app.bot.telegram_bot).
@@ -621,13 +628,28 @@ cta_text = "Tải app Tử Vi AI để xem lá số của riêng bạn"
 brand_assets_dir = ""
 scene_count = 8
 bgm_volume = 0.15
-# Illustrations: the LLM writes one image prompt per scene, Gemini draws it in the
-# traditional Vietnamese "giấy dó" style. Key: https://aistudio.google.com/app/apikey
-# (falls back to [app].gemini_api_key). Without a key, scenes use ornament frames.
+# Illustrations: the LLM writes one image prompt per scene and an image provider draws it in
+# the traditional Vietnamese "giấy dó" style. image_provider is a chain tried left to right:
+#   "local"        FLUX.1-schnell on this Mac via mflux (free; uv tool install mflux)
+#   "gemini"       Google Gemini (paid per image; key: https://aistudio.google.com/app/apikey)
+#   "local,gemini" local first, Gemini only when local fails (recommended)
+#   "none"         no illustrations
+# Finished pictures are cached by prompt in storage/cache/tuvi_images (image_cache = false to disable).
 image_provider = "gemini"
-gemini_api_key = ""
+image_cache = true
+gemini_api_key = ""   # falls back to [app].gemini_api_key
 image_model = "gemini-2.5-flash-image"
-# image_style = ""   # optional override of the built-in style prompt
+# image_style = ""    # optional override of the built-in style prompt (local and Gemini)
+# Local FLUX (image_provider contains "local"). The first run downloads ~9.6GB from Hugging Face.
+# local_model = "dhairyashil/FLUX.1-schnell-mflux-4bit"   # prequantized; use "schnell" + local_quantize = 4 to quantize yourself
+# local_base_model = "schnell"
+# local_steps = 4
+# local_width = 576      # multiples of 16, keep 9:16; raise to 720x1280 for sharper art (slower)
+# local_height = 1024
+# local_lora = ""        # optional style LoRA (.safetensors path or HF repo)
+# local_lora_scale = "1.0"
+# local_command = "mflux-generate"
+# local_timeout = 900    # seconds per image
 
 [fish_audio]
 # Fish Audio TTS service: https://fish.audio
