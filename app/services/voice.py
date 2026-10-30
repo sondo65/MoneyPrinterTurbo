@@ -2391,6 +2391,33 @@ def kokoro_tts(
 
 
 _VIENEU_NON_RETRYABLE_STATUS_CODES = {400, 401, 403, 404, 413, 422}
+# 服务端采样参数的合法范围（越界会返回 400）；配置值非法时忽略并沿用服务端默认值。
+_VIENEU_SAMPLING_LIMITS = {
+    "temperature": (float, 0.0, 2.0),
+    "top_k": (int, 1, 1024),
+    "top_p": (float, 0.0, 1.0),
+    "repetition_penalty": (float, 1.0, 2.0),
+}
+
+
+def _vieneu_sampling_options() -> dict:
+    """Optional ``[vieneu]`` sampling overrides. Lower ``temperature`` keeps the intonation
+    steadier from one sentence to the next (the server default 0.8 drifts audibly)."""
+    options = {}
+    for name, (kind, low, high) in _VIENEU_SAMPLING_LIMITS.items():
+        raw = config.vieneu.get(name)
+        if raw in (None, ""):
+            continue
+        try:
+            value = kind(raw)
+        except (TypeError, ValueError):
+            value = None
+        # top_p 的下界是开区间（0 不合法）
+        if value is None or value != value or not low <= value <= high or (name == "top_p" and value <= 0):
+            logger.warning(f"ignoring invalid [vieneu] {name} = {raw!r} (allowed {low}-{high})")
+            continue
+        options[name] = value
+    return options
 
 
 def vieneu_tts(
@@ -2433,6 +2460,7 @@ def vieneu_tts(
         "voice": voice,
         "response_format": "pcm",
         "sample_rate": VIENEU_SAMPLE_RATE,
+        **_vieneu_sampling_options(),
     }
     # atempo 在旧版 FFmpeg 中只接受 0.5-2.0，WebUI 的语速选项都在此范围内。
     rate = max(0.5, min(2.0, float(voice_rate or 1.0)))

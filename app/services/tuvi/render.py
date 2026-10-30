@@ -30,6 +30,12 @@ class RenderError(RuntimeError):
 SENTENCE_PAUSES = {".": 0.5, "!": 0.6, "?": 0.65}
 DEFAULT_SENTENCE_PAUSE = 0.45
 SENTENCE_EDGE_MS = 40
+# Each TTS sentence comes out at a slightly different level; matching them removes the
+# loud/quiet jumps that give the AI voice away. The gain is capped so a near-silent or
+# failed clip is not boosted into noise, and never pushed into clipping.
+SENTENCE_TARGET_DBFS = -20.0
+SENTENCE_MAX_GAIN_DB = 9.0
+SENTENCE_PEAK_CEILING_DBFS = -1.0
 
 
 @dataclass
@@ -105,6 +111,14 @@ def _trim(audio: AudioSegment) -> AudioSegment:
     return audio[start:end]
 
 
+def _match_level(clip: AudioSegment) -> AudioSegment:
+    if clip.dBFS == float("-inf"):
+        return clip
+    gain = SENTENCE_TARGET_DBFS - clip.dBFS
+    gain = min(gain, SENTENCE_PEAK_CEILING_DBFS - clip.max_dBFS)
+    return clip.apply_gain(max(-SENTENCE_MAX_GAIN_DB, min(SENTENCE_MAX_GAIN_DB, gain)))
+
+
 def join_sentences(parts: list[tuple[str, str]], output_path: str) -> SceneAudio:
     """Concatenate per-sentence TTS clips with deliberate pauses between them.
 
@@ -114,7 +128,7 @@ def join_sentences(parts: list[tuple[str, str]], output_path: str) -> SceneAudio
     track = AudioSegment.silent(duration=0, frame_rate=48000)
     spans = []
     for index, (text, path) in enumerate(parts):
-        clip = _trim(load_audio(path))
+        clip = _match_level(_trim(load_audio(path)))
         start = len(track) / 1000
         track += clip
         spans.append(SentenceSpan(text=text, start=start, end=len(track) / 1000))

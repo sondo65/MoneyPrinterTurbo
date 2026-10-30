@@ -86,6 +86,25 @@ def test_synthesis_requests_pcm_and_writes_mp3(monkeypatch, vieneu_config, tmp_p
     assert sub_maker.offset[-1][1] == pytest.approx(1.0 * 10**7, rel=0.1)
 
 
+def test_sampling_overrides_are_sent_and_invalid_ones_ignored(monkeypatch, vieneu_config, tmp_path):
+    vieneu_config.update({"temperature": "0.3", "top_k": 40, "top_p": 0, "repetition_penalty": 5, "bogus": 1})
+    post = Mock(return_value=_pcm_response(1.0))
+    monkeypatch.setattr(voice.requests, "post", post)
+
+    voice.vieneu_tts("Xin chào các bạn.", "Mai Anh", str(tmp_path / "voice.mp3"))
+
+    payload = post.call_args.kwargs["json"]
+    assert payload["temperature"] == 0.3
+    assert payload["top_k"] == 40
+    assert "top_p" not in payload and "repetition_penalty" not in payload and "bogus" not in payload
+
+
+@pytest.mark.parametrize("value", ["", None, "abc", float("nan"), -0.1, 2.5])
+def test_unusable_temperature_falls_back_to_server_default(monkeypatch, vieneu_config, value):
+    vieneu_config["temperature"] = value
+    assert voice._vieneu_sampling_options() == {}
+
+
 def test_voice_rate_is_applied_locally(monkeypatch, vieneu_config, tmp_path):
     monkeypatch.setattr(voice.requests, "post", Mock(return_value=_pcm_response(2.0)))
 
